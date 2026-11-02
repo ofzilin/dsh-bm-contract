@@ -60,8 +60,31 @@ source can be published without leaking a local directory layout.
 
 ## Install
 
+Install from GitHub:
+
 ```powershell
-dsh plugin --profile web add link:C:\Users\you\.dsh\local-plugins\dsh-bm-contract
+dsh plugin --profile web add "github:ofzilin/dsh-bm-contract#v0.2.1"
+```
+
+`#v0.2.1` pins the release; omit it or use `#main` to follow the default branch.
+
+Then add the vault path override to your profile
+(`~/.dsh/profiles/web/cordis.patch.yml`):
+
+```yaml
+- id: bm-contract
+  name: dsh-bm-contract
+  config:
+    vaultPath: 'C:\Users\you\Documents\basic-memory'
+```
+
+Restart DSH; the first load creates the two user files under
+`$DSH_HOME/dsh-bm-contract/`. Open **Plugins → dsh-bm-contract** to edit them.
+
+Local development only (machine-specific path):
+
+```powershell
+dsh plugin --profile web add "link:C:\path\to\dsh-bm-contract"
 ```
 
 For npm, publish this package and install it by name; the `defaults/` directory
