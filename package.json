@@ -1,0 +1,38 @@
+{
+  "name": "dsh-bm-contract",
+  "version": "0.2.1",
+  "description": "Injects the Basic Memory knowledge-base contract into DSH sessions.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ofzilin/dsh-bm-contract.git"
+  },
+  "homepage": "https://github.com/ofzilin/dsh-bm-contract#readme",
+  "bugs": {
+    "url": "https://github.com/ofzilin/dsh-bm-contract/issues"
+  },
+  "files": [
+    "src",
+    "lib/client.js",
+    "defaults",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  }
+}
