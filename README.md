@@ -45,7 +45,7 @@ assembly and refreshes on mtime change, so edits apply without restarting DSH.
   name: dsh-bm-contract
   config:
     vaultPath: 'C:\Users\you\Documents\basic-memory'
-    # contractPath: "C:\\Users\\you\\.dsh\\dsh-bm-contract\\CONTRACT.md"
+    # contractPath: 'C:\Users\you\.dsh\dsh-bm-contract\CONTRACT.md'
     # maxChars: 4000
     # triggers: ["知识库", "记到", "笔记"]
 ```
@@ -70,7 +70,10 @@ is included via `package.json#files`.
 ## If you remove `cordis.patch.yml`
 
 `dsh.bundle.patch` is what lets `dsh plugin add` activate the bundle. Without it,
-install the package as a dependency and add the row to your profile manually:
+install the package as a dependency and add the row to your profile manually.
+If you delete the file, also remove `dsh.bundle.patch` from `package.json` (or
+keep a minimal placeholder patch); otherwise the loader still looks for the
+missing file.
 
 ```yaml
 - insert:
