@@ -1,98 +1,70 @@
 # Knowledge Base Specification (template)
 
 > Machine-injected rules: `CONTRACT.md` in the same directory. This file is the
-> full human specification; it lives outside the vault and is not indexed as a
-> note. Replace this template with your own rules.
+> full human specification; it lives outside the vault and is not injected.
 
-## 1. Purpose
-
-Keep notes findable, reusable, and maintainable. The goal is not a perfect
-taxonomy: folders answer "where does this note live", tags answer "how will I
-filter it later", and wiki-links answer "what specific notes is it related to".
-
-## 2. Top-level layout
-
-Keep knowledge notes in three areas:
+## 1. Structure
 
     vault/
-    ├── projects/       # one project or workflow per folder
-    ├── reference/      # cross-project knowledge, grouped by discipline
-    └── inbox/          # not sure yet; triage later
+    ├── projects/    # one project or workflow per folder
+    ├── reference/   # cross-project knowledge, grouped by discipline
+    └── inbox/       # not sure yet; triage later
 
-`CONTRACT.md` and `SPEC.md` are meta files under `~/.dsh/dsh-bm-contract/`;
-they are not vault notes.
+`CONTRACT.md` and `SPEC.md` live under `~/.dsh/dsh-bm-contract/`, outside the vault.
 
-## 3. Placement
+Folders answer "where does this note live"; tags answer "how will I filter it
+later"; wiki-links answer "what is it related to". Store general knowledge once;
+keep project-specific knowledge in its project.
 
-Ask: if this note disappeared, how many projects would be affected?
+Placement:
 
-- Multiple projects → `reference/<discipline>/`.
-- One project → `projects/<project>/<function>/`.
-- Unsure → `inbox/`.
-- Referenced by a second project later → promote to `reference/`.
+- Multiple projects → `reference/<discipline>/`
+- One project → `projects/<project>/<function>/`
+- Unsure → `inbox/`
+- Second project references it → promote to `reference/`
 
-Split cross-discipline material into atomic notes and connect them with
-wiki-links instead of forcing one folder to own everything.
+Split cross-discipline material into atomic notes and connect them with wiki-links.
 
-## 4. Atomic notes and names
+## 2. Atomic notes and names
 
-One note expresses one topic. Use clear, stable, readable filenames; avoid
-names like `notes1`, `misc`, or `new-document`.
+One note = one topic. Use a clear, stable, readable **Chinese** topic name.
 
-Use a Chinese topic name as the file name. Obsidian resolves `[[wiki-link]]` by
-file name, so a Chinese filename lets a Chinese link such as
-`[[Basic Memory 底层模型 × 运行时选型]]` resolve directly.
+- Chinese file name: Obsidian resolves `[[wiki-link]]` by file name, so
+  `[[Basic Memory 底层模型 × 运行时选型]]` matches the Chinese file directly.
+- English permalink: allowed as a stable reference/URL; it is not the wiki-link
+  target. Do not rename the file to English just for the permalink.
+- Moves/renames: use `bm_move`, keep the permalink stable, check broken links.
 
-The permalink may be an English slug; it is a stable reference, not the
-wiki-link target. Do not rename the file to English just to make the permalink
-English. Example:
+Example: `Basic Memory 底层模型 × 运行时选型.md` · permalink
+`main/reference/computer/basic-memory-embedding-model-runtime-selection` ·
+wiki-link `[[Basic Memory 底层模型 × 运行时选型]]`.
 
-- file: `Basic Memory 底层模型 × 运行时选型.md`
-- permalink: `main/reference/computer/basic-memory-embedding-model-runtime-selection`
-- wiki-link: `[[Basic Memory 底层模型 × 运行时选型]]`
+## 3. Tags
 
-Use `bm_move` for moves and renames, and check for broken links afterwards.
+Tags are retrieval filters, not descriptions.
 
-## 5. Tags
+- 1 home tag (required) + 0–2 retrieval tags, at most 3 total.
+- Lowercase English; `/` for hierarchy; depth at most 2.
+- One spelling per concept; merge synonyms and delete unused tags.
+- Avoid broad tags such as `knowledge` or `important`.
 
-Tags are retrieval filters, not a description of every subject mentioned.
+## 4. Wiki-links
 
-- 1 home tag is required; add 0–2 cross-project retrieval tags only when they
-  have real filtering value.
-- At most 3 tags total; hierarchy depth at most 2 levels; lowercase English
-  with `/` as the separator.
-- Do not use broad tags such as `knowledge`, `important`, or a whole discipline
-  when a more specific tag exists.
-- Merge synonyms and delete tags that are never used for retrieval.
+- Express relationships with `[[wiki-link]]`, not tags.
+- Link names should be the target note's file name or stable title.
+- Reference `reference/` from projects; a project note may link several general notes.
 
-## 6. Wiki-links
+## 5. Maintenance
 
-Use `[[wiki-link]]` to express a relationship to a specific note. Link names
-should be the target note's filename or stable title. Do not use tags to express
-specific relationships.
+- Weekly: empty `inbox/`, promote notes referenced by a second project, merge synonymous tags.
+- Monthly: review tag usage and check for broken links.
+- Archive before deleting; folder moves are cheap, tags and links are the real structure.
 
-## 7. Maintenance
-
-Weekly:
-
-- Empty `inbox/`.
-- Promote notes referenced by a second project.
-- Merge duplicate or synonymous tags.
-
-Monthly:
-
-- Review tag usage.
-- Check for broken wiki-links.
-- Fix clearly misplaced notes; leave harmless misfiling alone.
-
-Archive before deleting. Folder moves are cheap; tags and links are the real
-structure.
-
-## 8. Checklist before writing
+## 6. Checklist before writing
 
 - Does this note express exactly one topic?
-- How many projects does it affect, and therefore where does it belong?
+- Does it belong in `projects/`, `reference/`, or `inbox/`?
+- Is the file name Chinese and stable?
 - Does it have one home tag and at most two retrieval tags?
 - Are relationships expressed with wiki-links rather than tags?
-- Is the filename stable and readable?
-- Is the filename a Chinese topic name, with an English permalink where needed?
+- Is the permalink stable, or does it need an English slug?

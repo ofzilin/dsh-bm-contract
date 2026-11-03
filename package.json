@@ -1,6 +1,6 @@
 {
   "name": "dsh-bm-contract",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Injects the Basic Memory knowledge-base contract into DSH sessions.",
   "type": "module",
   "main": "src/index.js",
