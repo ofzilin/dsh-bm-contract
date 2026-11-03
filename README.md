@@ -54,6 +54,9 @@ assembly and refreshes on mtime change, so edits apply without restarting DSH.
 - `contractPath` — optional; relative paths resolve against the package root.
 - `maxChars` — cap for one injected block (default 4000).
 - `triggers` — case-insensitive substrings for the conditional injection.
+- `routerStart` / `routerEnd` / `contractStart` / `contractEnd` — optional marker overrides.
+  The defaults are the `<!-- KB-ROUTER:START/END -->` and `<!-- KB-CONTRACT:START/END -->`
+  comments written by `defaults/CONTRACT.md`; you only need these if you invent your own markers.
 
 The package's `cordis.patch.yml` intentionally has no personal path, so the
 source can be published without leaking a local directory layout.
@@ -63,10 +66,10 @@ source can be published without leaking a local directory layout.
 Install from GitHub:
 
 ```powershell
-dsh plugin --profile web add "github:ofzilin/dsh-bm-contract#v0.2.3"
+dsh plugin --profile web add "github:ofzilin/dsh-bm-contract#v0.2.4"
 ```
 
-`#v0.2.3` pins the release; omit it or use `#main` to follow the default branch.
+`#v0.2.4` pins the release; omit it or use `#main` to follow the default branch.
 
 Then add the vault path override to your profile
 (`~/.dsh/profiles/web/cordis.patch.yml`):

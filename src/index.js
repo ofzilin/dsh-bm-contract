@@ -58,6 +58,13 @@ function ensureUserFiles(logger) {
   }
 }
 
+const MARKERS = {
+  routerStart: '<!-- KB-ROUTER:START -->',
+  routerEnd: '<!-- KB-ROUTER:END -->',
+  contractStart: '<!-- KB-CONTRACT:START -->',
+  contractEnd: '<!-- KB-CONTRACT:END -->',
+}
+
 function extract(raw, start, end) {
   if (!start || !end) return ''
   const a = raw.indexOf(start)
@@ -116,8 +123,16 @@ export function apply(ctx, config = {}) {
       const key = `${stat.mtimeMs}:${stat.size}`
       if (key !== cache.key) {
         const raw = readFileSync(file, 'utf8')
-        const router = extract(raw, config.routerStart, config.routerEnd) || DEFAULT_ROUTER
-        const contract = extract(raw, config.contractStart, config.contractEnd) || DEFAULT_CONTRACT
+        const router = extract(
+          raw,
+          config.routerStart ?? MARKERS.routerStart,
+          config.routerEnd ?? MARKERS.routerEnd,
+        ) || DEFAULT_ROUTER
+        const contract = extract(
+          raw,
+          config.contractStart ?? MARKERS.contractStart,
+          config.contractEnd ?? MARKERS.contractEnd,
+        ) || DEFAULT_CONTRACT
         cache = { key, router, contract }
       }
     } catch (error) {
