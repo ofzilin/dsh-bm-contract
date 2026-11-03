@@ -39,6 +39,20 @@ wiki-links instead of forcing one folder to own everything.
 One note expresses one topic. Use clear, stable, readable filenames; avoid
 names like `notes1`, `misc`, or `new-document`.
 
+Use a Chinese topic name as the file name. Obsidian resolves `[[wiki-link]]` by
+file name, so a Chinese filename lets a Chinese link such as
+`[[Basic Memory 底层模型 × 运行时选型]]` resolve directly.
+
+The permalink may be an English slug; it is a stable reference, not the
+wiki-link target. Do not rename the file to English just to make the permalink
+English. Example:
+
+- file: `Basic Memory 底层模型 × 运行时选型.md`
+- permalink: `main/reference/computer/basic-memory-embedding-model-runtime-selection`
+- wiki-link: `[[Basic Memory 底层模型 × 运行时选型]]`
+
+Use `bm_move` for moves and renames, and check for broken links afterwards.
+
 ## 5. Tags
 
 Tags are retrieval filters, not a description of every subject mentioned.
@@ -81,3 +95,4 @@ structure.
 - Does it have one home tag and at most two retrieval tags?
 - Are relationships expressed with wiki-links rather than tags?
 - Is the filename stable and readable?
+- Is the filename a Chinese topic name, with an English permalink where needed?

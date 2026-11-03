@@ -7,7 +7,7 @@
 
 <!-- KB-CONTRACT:START -->
 - Multi-project knowledge → `reference/<discipline>/`; single-project knowledge → `projects/<project>/<function>/`; unsure → `inbox/`.
-- One note = one topic; use a stable, readable filename.
+- One note = one topic; use a stable, readable Chinese filename; the permalink may be an English slug.
 - Each note: 1 home tag (required) + 0–2 retrieval tags, at most 3 total; lowercase English, `/` depth at most 2.
 - Express relationships with `[[wiki-link]]`, not tags.
 - Promote a note from a project to `reference/` when a second project references it; archive before deleting.
