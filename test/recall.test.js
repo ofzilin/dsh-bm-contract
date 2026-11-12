@@ -9,7 +9,9 @@ import {
   formatRecall,
   isAgentNotice,
   isTrivial,
+  normalizeRecallId,
   readSearchResults,
+  recallReadTarget,
   segment,
   stripHarnessSuffix,
 } from '../src/recall.js'
@@ -94,7 +96,31 @@ test('formatRecall renders a compact pointer with the conclusion', () => {
   assert.match(text, /main\/reference\/computer\/dsh-plugin-takeover-timing/)
   assert.match(text, /结论/)
   assert.doesNotMatch(text, /记录日期/)
-  assert.match(text, /bm_read/)
+  assert.match(text, /默认先 bm_read/)
+  assert.doesNotMatch(text, /无关就忽略/)
+})
+
+test('normalizeRecallId strips project prefix, extension, and separators', () => {
+  assert.equal(normalizeRecallId('main/reference/computer/x'), 'reference/computer/x')
+  assert.equal(normalizeRecallId('reference\\computer\\x.md'), 'reference/computer/x')
+  assert.equal(normalizeRecallId(''), '')
+})
+
+test('recallReadTarget only matches the read tool', () => {
+  assert.equal(
+    recallReadTarget(
+      { name: 'mcp__basic-memory__bm_read', arguments: { identifier: 'main/a' } },
+      'mcp__basic-memory__bm_read',
+    ),
+    'a',
+  )
+  assert.equal(
+    recallReadTarget(
+      { name: 'mcp__basic-memory__bm_search', arguments: { query: 'a' } },
+      'mcp__basic-memory__bm_read',
+    ),
+    '',
+  )
 })
 
 test('readSearchResults accepts value, nested value, and JSON text', () => {

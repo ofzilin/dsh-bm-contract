@@ -89,14 +89,22 @@ assembly and refreshes on mtime change, so edits apply without restarting DSH.
 - `topK` — `page_size` requested from `bm_search` (default 5).
 - `maxItems` — notes injected per message (default 2).
 - `vocabTtlMs` — vocabulary refresh interval (default 5 minutes).
-- `ledger` — append one JSON line per hit to `$DSH_HOME/dsh-bm-contract/recall-ledger.jsonl`
-  (terms, scores, permalinks; no message text). Default `true`.
+- `readToolName` — tool observed for read conversion (default `mcp__basic-memory__bm_read`).
+- `trackReads` — append a `kind: "read"` ledger line when an injected note is read (default `true`).
+- `ledger` — append one JSON line per recall and per read to
+  `$DSH_HOME/dsh-bm-contract/recall-ledger.jsonl` (`kind`, terms, scores, permalinks;
+  no message text). Default `true`.
 
 Recall builds its term vocabulary from note titles, tags, headings, and quoted
 conclusions, then refreshes it at most once per `vocabTtlMs`. A hit is injected
 only when its score is at least `minScore`; otherwise the turn continues with no
 extra context. When `bm_search` is unavailable, recall fails open and the turn
 is unaffected.
+
+The injected block asks for a default read: open the most relevant body first
+(`bm_read` supports section and token budgets), then judge; skip only after
+confirming the note is off-topic. If notes and the live state disagree, the live
+state wins.
 
 The package's `cordis.patch.yml` intentionally has no personal path, so the
 source can be published without leaking a local directory layout.
@@ -106,10 +114,10 @@ source can be published without leaking a local directory layout.
 Install from GitHub:
 
 ```powershell
-dsh plugin --profile web add "github:ofzilin/dsh-bm-contract#v0.3.3"
+dsh plugin --profile web add "github:ofzilin/dsh-bm-contract#v0.3.4"
 ```
 
-`#v0.3.3` pins the release; omit it or use `#main` to follow the default branch.
+`#v0.3.4` pins the release; omit it or use `#main` to follow the default branch.
 
 Then add the vault path override to your profile
 (`~/.dsh/profiles/web/cordis.patch.yml`):

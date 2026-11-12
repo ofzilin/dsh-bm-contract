@@ -4,7 +4,17 @@ import os from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { buildVocabulary, formatRecall, isAgentNotice, isTrivial, readSearchResults, segment, stripHarnessSuffix } from './recall.js'
+import {
+  buildVocabulary,
+  formatRecall,
+  isAgentNotice,
+  isTrivial,
+  normalizeRecallId,
+  readSearchResults,
+  recallReadTarget,
+  segment,
+  stripHarnessSuffix,
+} from './recall.js'
 
 export const name = 'bm-contract'
 export const inject = ['systemPrompt', 'tools']
@@ -128,6 +138,10 @@ export function apply(ctx, config = {}) {
   const recallMaxItems = integerOr(recall.maxItems, 2)
   const recallVocabTtl = integerOr(recall.vocabTtlMs, 5 * 60 * 1000)
   const recallLedger = recall.ledger !== false
+  const recallReadTool = typeof recall.readToolName === 'string' && recall.readToolName
+    ? recall.readToolName
+    : 'mcp__basic-memory__bm_read'
+  const recallTrackReads = recall.trackReads !== false
 
   const header = [
     vault
@@ -235,6 +249,18 @@ export function apply(ctx, config = {}) {
 
   const injectedNotes = new WeakMap()
   const recallSeen = new WeakMap()
+  const recentInjected = new Set()
+  const readMarked = new Set()
+
+  const markInjected = keys => {
+    for (const key of keys) {
+      if (!key) continue
+      recentInjected.add(key)
+      if (recentInjected.size > 200) {
+        recentInjected.delete(recentInjected.values().next().value)
+      }
+    }
+  }
 
   const buildRecallNotice = async ({ agent, session, message, signal }) => {
     if (!recallEnabled || recallDisabled || !vault) return ''
@@ -265,7 +291,14 @@ export function apply(ctx, config = {}) {
     for (const item of hits) {
       seen.add(item.permalink ?? item.entity ?? item.file_path ?? item.title)
     }
+    markInjected(
+      hits.flatMap(item => [
+        normalizeRecallId(item.permalink ?? item.entity ?? item.file_path ?? ''),
+        normalizeRecallId(item.title ?? ''),
+      ]),
+    )
     appendLedger({
+      kind: 'recall',
       terms,
       fallback,
       hits: hits.map(item => ({
@@ -275,6 +308,19 @@ export function apply(ctx, config = {}) {
     })
     return formatRecall(hits, { maxItems: recallMaxItems })
   }
+
+  // Observe bm_read calls so the ledger can report injection -> read conversion.
+  ctx.on('tools/result', (exec, result) => {
+    try {
+      if (!recallTrackReads || recallDisabled || result?.isError) return
+      const key = recallReadTarget(exec, recallReadTool)
+      if (!key || !recentInjected.has(key) || readMarked.has(key)) return
+      readMarked.add(key)
+      appendLedger({ kind: 'read', identifier: key, tool: exec.name })
+    } catch {
+      // Observation only: never break a tool result.
+    }
+  })
 
   const specPath = join(USER_DIR, 'SPEC.md')
   const readText = path => {
