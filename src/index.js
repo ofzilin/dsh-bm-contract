@@ -1,11 +1,13 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import os from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { buildVocabulary, formatRecall, isAgentNotice, isTrivial, readSearchResults, segment } from './recall.js'
+
 export const name = 'bm-contract'
-export const inject = ['systemPrompt']
+export const inject = ['systemPrompt', 'tools']
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DSH_HOME = process.env.DSH_HOME || join(os.homedir(), '.dsh')
@@ -39,6 +41,10 @@ const DEFAULT_TRIGGERS = [
   '知识库', '记到', '存到', '笔记', 'basic memory', 'basic-memory',
   '项目总结', '项目需求', '学习资料', 'reference/', 'inbox/',
 ]
+
+const numberOr = (value, fallback) => (Number.isFinite(value) ? value : fallback)
+const integerOr = (value, fallback) =>
+  (Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback)
 
 function ensureUserFiles(logger) {
   try {
@@ -106,6 +112,23 @@ export function apply(ctx, config = {}) {
     ? config.triggers.map(String).map(trigger => trigger.toLowerCase())
     : DEFAULT_TRIGGERS
 
+  const recall = config.recall && typeof config.recall === 'object' ? config.recall : {}
+  const recallEnabled = recall.enabled ?? config.recallEnabled ?? true
+  const recallTool = typeof recall.toolName === 'string' && recall.toolName
+    ? recall.toolName
+    : 'mcp__basic-memory__bm_search'
+  const recallProject = typeof recall.project === 'string' && recall.project
+    ? recall.project
+    : 'main'
+  const recallMode = typeof recall.mode === 'string' && recall.mode ? recall.mode : 'hybrid'
+  const recallMinSimilarity = numberOr(recall.minSimilarity, 0.2)
+  const recallMinScore = numberOr(recall.minScore, 0.5)
+  const recallMaxTerms = integerOr(recall.maxTerms, 3)
+  const recallTopK = integerOr(recall.topK, 5)
+  const recallMaxItems = integerOr(recall.maxItems, 2)
+  const recallVocabTtl = integerOr(recall.vocabTtlMs, 5 * 60 * 1000)
+  const recallLedger = recall.ledger !== false
+
   const header = [
     vault
       ? `Basic Memory knowledge base: project "main", vault ${vault}.`
@@ -149,6 +172,109 @@ export function apply(ctx, config = {}) {
   const clip = text => (text.length > maxChars ? text.slice(0, maxChars) : text)
   const routerText = () => `${header}${clip(load().router)}`
   const contractText = () => `${header}${clip(load().contract)}`
+
+  let vocabularyCache = { at: 0, value: null }
+  let recallWarned = false
+  let recallFailures = 0
+  let recallDisabled = false
+
+  const vocabulary = () => {
+    if (!vault) return null
+    const now = Date.now()
+    if (vocabularyCache.value && now - vocabularyCache.at < recallVocabTtl) {
+      return vocabularyCache.value
+    }
+    try {
+      vocabularyCache = { at: now, value: buildVocabulary(vault) }
+    } catch (error) {
+      if (!recallWarned) {
+        recallWarned = true
+        ctx.logger?.warn?.(
+          `bm-contract: vocabulary build failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+    return vocabularyCache.value
+  }
+
+  const appendLedger = entry => {
+    if (!recallLedger) return
+    try {
+      appendFileSync(
+        join(USER_DIR, 'recall-ledger.jsonl'),
+        `${JSON.stringify({ ts: new Date().toISOString(), project: recallProject, ...entry })}\n`,
+        'utf8',
+      )
+    } catch {
+      // Recall bookkeeping must never break a turn.
+    }
+  }
+
+  const searchVault = async (agent, signal, query) => {
+    const result = await ctx.tools.execute({
+      callId: `bm-recall:${randomUUID()}`,
+      name: recallTool,
+      arguments: {
+        project: recallProject,
+        query,
+        mode: recallMode,
+        min_similarity: recallMinSimilarity,
+        page_size: recallTopK,
+        output_format: 'json',
+      },
+      agent,
+      signal: signal ?? new AbortController().signal,
+    })
+    if (result?.isError) {
+      const reason = result.error?.message ?? result.error?.code ?? 'bm_search failed'
+      throw new Error(reason)
+    }
+    recallFailures = 0
+    return readSearchResults(result)
+  }
+
+  const injectedNotes = new WeakMap()
+  const recallSeen = new WeakMap()
+
+  const buildRecallNotice = async ({ agent, session, message, signal }) => {
+    if (!recallEnabled || recallDisabled || !vault) return ''
+    if (typeof ctx.tools?.execute !== 'function') return ''
+    const text = textOf(message).trim()
+    if (!text || isTrivial(text) || isAgentNotice(text)) return ''
+
+    const vocab = vocabulary()
+    const terms = vocab ? segment(text, vocab, { maxTerms: recallMaxTerms }) : []
+    if (terms.length === 0) return ''
+
+    let items = await searchVault(agent, signal, terms.join(' '))
+    const fallback = items.length === 0
+    if (fallback) items = await searchVault(agent, signal, text.slice(0, 200))
+    if (items.length === 0) return ''
+
+    const seen = injectedNotes.get(session) ?? new Set()
+    injectedNotes.set(session, seen)
+    const hits = items
+      .filter(item => Number(item?.score ?? 0) >= recallMinScore)
+      .filter(item => {
+        const key = item?.permalink ?? item?.entity ?? item?.file_path ?? item?.title
+        return typeof key === 'string' && key.length > 0 && !seen.has(key)
+      })
+      .slice(0, recallMaxItems)
+    if (hits.length === 0) return ''
+
+    for (const item of hits) {
+      seen.add(item.permalink ?? item.entity ?? item.file_path ?? item.title)
+    }
+    appendLedger({
+      terms,
+      fallback,
+      hits: hits.map(item => ({
+        permalink: item.permalink ?? item.entity ?? '',
+        score: Number(item.score ?? 0),
+      })),
+    })
+    return formatRecall(hits, { maxItems: recallMaxItems })
+  }
 
   const specPath = join(USER_DIR, 'SPEC.md')
   const readText = path => {
@@ -284,6 +410,16 @@ export function apply(ctx, config = {}) {
     return triggers.some(trigger => lower.includes(trigger))
   }
 
+  const injectAfterLast = (decision, originals, notice) => {
+    const at = decision.messages.findLastIndex(message => originals.includes(message))
+    return {
+      ...decision,
+      messages: at >= 0
+        ? decision.messages.toSpliced(at + 1, 0, notice)
+        : [...decision.messages, notice],
+    }
+  }
+
   ctx.on('agent/pre-step', async ({ agent, messages, signal }, next) => {
     const decision = await next()
     try {
@@ -292,17 +428,41 @@ export function apply(ctx, config = {}) {
       if (!session || !Array.isArray(messages) || !Array.isArray(decision.messages)) return decision
       const lastUser = [...messages].reverse().find(message => message?.role === 'user')
       if (!lastUser?.id) return decision
-      if (seen.get(session) === lastUser.id) return decision
-      if (!matches(textOf(lastUser))) return decision
-      seen.set(session, lastUser.id)
-      const notice = makeUserMessage(`[BM contract]\n${contractText()}`)
-      const at = decision.messages.findLastIndex(message => messages.includes(message))
-      return {
-        ...decision,
-        messages: at >= 0
-          ? decision.messages.toSpliced(at + 1, 0, notice)
-          : [...decision.messages, notice],
+
+      let result = decision
+      if (seen.get(session) !== lastUser.id && matches(textOf(lastUser))) {
+        seen.set(session, lastUser.id)
+        result = injectAfterLast(
+          result,
+          messages,
+          makeUserMessage(`[BM contract]\n${contractText()}`),
+        )
       }
+
+      if (recallSeen.get(session) !== lastUser.id) {
+        recallSeen.set(session, lastUser.id)
+        let notice = ''
+        try {
+          notice = await buildRecallNotice({ agent, session, message: lastUser, signal })
+        } catch (error) {
+          recallFailures += 1
+          if (recallFailures >= 3 && !recallDisabled) {
+            recallDisabled = true
+            ctx.logger?.warn?.(
+              'bm-contract: recall disabled after repeated bm_search failures (set recall.enabled=false to silence)',
+            )
+          }
+          if (!recallWarned) {
+            recallWarned = true
+            ctx.logger?.warn?.(
+              `bm-contract: recall failed: ${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
+        }
+        if (notice) result = injectAfterLast(result, messages, makeUserMessage(notice))
+      }
+
+      return result
     } catch (error) {
       ctx.logger?.warn?.(
         `bm-contract: pre-step injection failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -311,5 +471,5 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  ctx.logger?.info?.('bm-contract: loaded (router section + conditional contract injection)')
+  ctx.logger?.info?.('bm-contract: loaded (router + contract + recall)')
 }
