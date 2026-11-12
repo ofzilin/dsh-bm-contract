@@ -428,6 +428,9 @@ export function apply(ctx, config = {}) {
       if (!session || !Array.isArray(messages) || !Array.isArray(decision.messages)) return decision
       const lastUser = [...messages].reverse().find(message => message?.role === 'user')
       if (!lastUser?.id) return decision
+      // Human turns carry no source; injected context, runtime snapshots, and agent
+      // relays do. Recalling on those only burns context and pollutes the ledger.
+      if (lastUser.source) return decision
 
       let result = decision
       if (seen.get(session) !== lastUser.id && matches(textOf(lastUser))) {
