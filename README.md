@@ -106,10 +106,10 @@ source can be published without leaking a local directory layout.
 Install from GitHub:
 
 ```powershell
-dsh plugin --profile web add "github:ofzilin/dsh-bm-contract#v0.3.1"
+dsh plugin --profile web add "github:ofzilin/dsh-bm-contract#v0.3.2"
 ```
 
-`#v0.3.1` pins the release; omit it or use `#main` to follow the default branch.
+`#v0.3.2` pins the release; omit it or use `#main` to follow the default branch.
 
 Then add the vault path override to your profile
 (`~/.dsh/profiles/web/cordis.patch.yml`):

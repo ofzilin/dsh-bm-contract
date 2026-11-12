@@ -263,3 +263,64 @@ test('pre-step ignores sourced (non-human) messages', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('pre-step recalls human messages that carry a user source', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bm-recall-human-'))
+  try {
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: DSH 插件生效时机\n---\n> 结论：不需要重启。\n')
+
+    let handler
+    let calls = 0
+    const ctx = {
+      logger: { info() {}, warn() {} },
+      systemPrompt: { section() {} },
+      inject() {},
+      on(event, fn) {
+        if (event === 'agent/pre-step') handler = fn
+      },
+      tools: {
+        async execute() {
+          calls += 1
+          return {
+            isError: false,
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  results: [
+                    {
+                      title: 'DSH 插件生效时机',
+                      permalink: 'main/a',
+                      score: 1.2,
+                      content: '> 结论：不需要重启。',
+                    },
+                  ],
+                }),
+              },
+            ],
+          }
+        },
+      },
+    }
+
+    apply(ctx, { vaultPath: dir, recall: { ledger: false } })
+    const messages = [
+      {
+        id: 'u5',
+        role: 'user',
+        source: { kind: 'user' },
+        content: [{ type: 'text', text: '插件装了没生效 需要重启吗' }],
+      },
+    ]
+    const decision = { kind: 'enter', messages: [...messages] }
+    const result = await handler(
+      { agent: { session: {} }, messages, signal: {} },
+      async () => decision,
+    )
+    assert.equal(result.messages.length, 2)
+    assert.match(result.messages[1].content[0].text, /^\[BM recall\]/)
+    assert.equal(calls, 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
