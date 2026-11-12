@@ -21,6 +21,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const HEX_HASH = /^[0-9a-f]{16,}$/i
 const TECHNICAL = /^[a-z0-9][a-z0-9]*(?:[-_][a-z0-9]+)+$/i
 const AGENT_NOTICE = /^(Agent|Background agent|Background job)\s+\S+\s+(sent a message|finished|started)/i
+/** The delegation runtime appends its instructions to the task text without a separator. */
+const HARNESS_SUFFIX = /\bYour parent agent id is\b|\bYou are a delegated subagent\b|\bBefore you finish, send your result\b/
 
 const STOP_TOKENS = new Set([
   'the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'will', 'your', 'you',
@@ -186,6 +188,13 @@ export function isTrivial(text) {
 /** Agent-to-agent notifications are user-role messages but never human prompts. */
 export function isAgentNotice(text) {
   return AGENT_NOTICE.test(String(text ?? '').trim())
+}
+
+/** Drop the delegation instructions appended after the human task text. */
+export function stripHarnessSuffix(text) {
+  const value = String(text ?? '')
+  const at = value.search(HARNESS_SUFFIX)
+  return (at > 0 ? value.slice(0, at) : value).trim()
 }
 
 /**

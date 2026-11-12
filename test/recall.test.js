@@ -11,6 +11,7 @@ import {
   isTrivial,
   readSearchResults,
   segment,
+  stripHarnessSuffix,
 } from '../src/recall.js'
 import { apply } from '../src/index.js'
 
@@ -63,6 +64,14 @@ test('isAgentNotice ignores agent-to-agent notifications', () => {
     true,
   )
   assert.equal(isAgentNotice('插件装了没生效'), false)
+})
+
+test('stripHarnessSuffix removes appended delegation instructions', () => {
+  const text = stripHarnessSuffix(
+    '插件装了没生效。Your parent agent id is "session-1". Before you finish, send your result with send_message(...).',
+  )
+  assert.equal(text, '插件装了没生效。')
+  assert.equal(stripHarnessSuffix('插件装了没生效'), '插件装了没生效')
 })
 
 test('isTrivial skips acknowledgements and very short messages', () => {

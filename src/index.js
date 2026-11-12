@@ -4,7 +4,7 @@ import os from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { buildVocabulary, formatRecall, isAgentNotice, isTrivial, readSearchResults, segment } from './recall.js'
+import { buildVocabulary, formatRecall, isAgentNotice, isTrivial, readSearchResults, segment, stripHarnessSuffix } from './recall.js'
 
 export const name = 'bm-contract'
 export const inject = ['systemPrompt', 'tools']
@@ -239,7 +239,7 @@ export function apply(ctx, config = {}) {
   const buildRecallNotice = async ({ agent, session, message, signal }) => {
     if (!recallEnabled || recallDisabled || !vault) return ''
     if (typeof ctx.tools?.execute !== 'function') return ''
-    const text = textOf(message).trim()
+    const text = stripHarnessSuffix(textOf(message))
     if (!text || isTrivial(text) || isAgentNotice(text)) return ''
 
     const vocab = vocabulary()
