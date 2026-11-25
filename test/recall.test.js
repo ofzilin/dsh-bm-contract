@@ -1,361 +1,129 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import test from 'node:test'
 
 import {
-  buildVocabulary,
+  MAX_CHARS,
+  MIN_SCORE,
   formatRecall,
   isAgentNotice,
   isTrivial,
   normalizeRecallId,
+  pickHits,
   readSearchResults,
-  recallReadTarget,
-  segment,
   stripHarnessSuffix,
 } from '../src/recall.js'
-import { apply } from '../src/index.js'
 
-const vocabulary = {
-  terms: new Map([
-    ['插件', { df: 2, weight: 3 }],
-    ['生效', { df: 1, weight: 3 }],
-    ['重启', { df: 1, weight: 2 }],
-    ['件生', { df: 1, weight: 2 }],
-    ['dsh', { df: 2, weight: 3 }],
-  ]),
-}
-
-test('segment keeps non-overlapping high-signal terms', () => {
-  const terms = segment('插件装了没生效，需要重启吗', vocabulary)
-  assert.deepEqual(terms, ['插件', '生效', '重启'])
+const hit = (over = {}) => ({
+  title: 'Gmail MCP 凭据配置',
+  permalink: 'main/reference/computer/gmail-mcp-config',
+  score: 0.86,
+  content: 'OAuth 客户端须建 Desktop 类型，redirect URI 固定为 http://localhost:8765/oauth/callback。',
+  ...over,
 })
 
-test('segment keeps latin identifiers and CJK terms together', () => {
-  const terms = segment('dsh 插件 没生效', vocabulary)
-  assert.ok(terms.includes('dsh'))
-  assert.ok(terms.includes('插件'))
-  assert.ok(terms.includes('生效'))
+const SECOND = hit({
+  title: 'Basic Memory 部署',
+  permalink: 'main/projects/basic-memory/deploy',
+  score: 0.66,
+  content: 'systemd unit 用 uv run 启动，端口 8765。',
 })
 
-test('segment falls back to run edges when nothing is known', () => {
-  const terms = segment('量子纠缠与退相干', { terms: new Map() })
-  assert.ok(terms.length > 0)
-  assert.ok(terms.every(term => term.length >= 2))
-})
-
-test('segment drops UUIDs and dotted config keys', () => {
-  const terms = segment(
-    'Agent 516102d8-653d-4694-82e2-8d569ae140fa config.vaultPath 插件没生效',
-    vocabulary,
-  )
-  assert.ok(terms.includes('插件'))
-  assert.ok(!terms.some(term => term.includes('516102d8')))
-  assert.ok(!terms.some(term => term.includes('config')))
-})
-
-test('segment keeps package-style identifiers', () => {
-  const terms = segment('dsh-bm-contract 安装失败', vocabulary)
-  assert.ok(terms.includes('dsh-bm-contract'))
-})
-
-test('isAgentNotice ignores agent-to-agent notifications', () => {
+test('formatRecall renders the injected block', () => {
   assert.equal(
-    isAgentNotice('Agent 516102d8-653d-4694-82e2-8d569ae140fa sent a message: hi'),
-    true,
-  )
-  assert.equal(isAgentNotice('插件装了没生效'), false)
-})
-
-test('stripHarnessSuffix removes appended delegation instructions', () => {
-  const text = stripHarnessSuffix(
-    '插件装了没生效。Your parent agent id is "session-1". Before you finish, send your result with send_message(...).',
-  )
-  assert.equal(text, '插件装了没生效。')
-  assert.equal(stripHarnessSuffix('插件装了没生效'), '插件装了没生效')
-})
-
-test('isTrivial skips acknowledgements and very short messages', () => {
-  for (const text of ['继续', '好的', '嗯', 'ok', '谢谢', '?']) {
-    assert.equal(isTrivial(text), true, text)
-  }
-  assert.equal(isTrivial('插件装了没生效'), false)
-})
-
-test('formatRecall renders a compact pointer with the conclusion', () => {
-  const text = formatRecall([
-    {
-      title: 'DSH 插件生效时机：安装、重装与刷新',
-      permalink: 'main/reference/computer/dsh-plugin-takeover-timing',
-      content: '# 标题\n\n> 记录日期：2026-11-10\n> 结论：装完即时生效，不需要重启。\n',
-    },
-  ])
-  assert.match(text, /^\[BM recall\]/)
-  assert.match(text, /1\. DSH 插件生效时机/)
-  assert.match(text, /main\/reference\/computer\/dsh-plugin-takeover-timing/)
-  assert.match(text, /结论/)
-  assert.doesNotMatch(text, /记录日期/)
-  assert.match(text, /默认先 bm_read/)
-  assert.doesNotMatch(text, /无关就忽略/)
-})
-
-test('normalizeRecallId strips project prefix, extension, and separators', () => {
-  assert.equal(normalizeRecallId('main/reference/computer/x'), 'reference/computer/x')
-  assert.equal(normalizeRecallId('reference\\computer\\x.md'), 'reference/computer/x')
-  assert.equal(normalizeRecallId(''), '')
-})
-
-test('recallReadTarget only matches the read tool', () => {
-  assert.equal(
-    recallReadTarget(
-      { name: 'mcp__basic-memory__bm_read', arguments: { identifier: 'main/a' } },
-      'mcp__basic-memory__bm_read',
-    ),
-    'a',
-  )
-  assert.equal(
-    recallReadTarget(
-      { name: 'mcp__basic-memory__bm_search', arguments: { query: 'a' } },
-      'mcp__basic-memory__bm_read',
-    ),
-    '',
+    formatRecall([hit(), SECOND]),
+    [
+      '## 知识库相关笔记（2 条，按相似度排序）',
+      '',
+      '1. **Gmail MCP 凭据配置** — `main/reference/computer/gmail-mcp-config` [0.86 必读]',
+      '   OAuth 客户端须建 Desktop 类型，redirect URI 固定为 http://localhost:8765/oauth/callback。',
+      '',
+      '2. **Basic Memory 部署** — `main/projects/basic-memory/deploy` [0.66 参考]',
+      '   systemd unit 用 uv run 启动，端口 8765。',
+      '',
+      '必读 = 先用 bm_read 读全文再回答；参考 = 摘要够用就别读；不要复述本块。',
+    ].join('\n'),
   )
 })
 
-test('readSearchResults accepts value, nested value, and JSON text', () => {
-  const hit = { title: 'T', permalink: 'main/t', score: 1 }
-  assert.deepEqual(readSearchResults({ isError: false, value: { results: [hit] } }), [hit])
-  assert.deepEqual(readSearchResults({ isError: false, value: { data: { results: [hit] } } }), [hit])
+test('only a top hit at or above the read score is 必读', () => {
+  assert.match(formatRecall([hit({ score: 0.79 })]), /\[0\.79 参考\]/)
+  assert.match(formatRecall([hit({ score: 0.8 })]), /\[0\.80 必读\]/)
+  assert.match(formatRecall([hit({ score: 0.9 }), SECOND]), /\n2\. .*\[0\.66 参考\]/)
+})
+
+test('a hit without content keeps only the pointer line', () => {
+  const text = formatRecall([hit({ content: '' })])
+  assert.equal(text.split('\n').filter(line => line.startsWith('1. ')).length, 1)
+  assert.ok(!text.includes('\n   '))
+})
+
+test('markdown in the note title cannot break the layout', () => {
+  const text = formatRecall([hit({ title: 'a **bold** `code` [x] #tag', content: '' })])
+  assert.match(text, /1\. \*\*a bold code x tag\*\*/)
+})
+
+test('empty input produces no block at all', () => {
+  assert.equal(formatRecall([]), '')
+  assert.equal(formatRecall(undefined), '')
+})
+
+test('the block never exceeds the character budget', () => {
+  const long = (n, ch) => ch.repeat(n)
+  const items = [
+    hit({ title: long(300, '标'), permalink: `main/${long(300, 'p')}`, content: long(400, '长') }),
+    hit({ title: long(300, '题'), permalink: `main/${long(300, 'q')}`, content: long(400, '文') }),
+  ]
+  const text = formatRecall(items)
+  assert.ok(text.length <= MAX_CHARS, `got ${text.length} chars`)
+  assert.match(text, /^## 知识库相关笔记（1 条，按相似度排序）/)
+})
+
+test('long conclusions are truncated with an ellipsis', () => {
+  const text = formatRecall([hit({ content: '结'.repeat(300) })])
+  const line = text.split('\n').find(item => item.startsWith('   '))
+  assert.ok(line.length <= 104, `got ${line.length}`)
+  assert.ok(line.endsWith('…'))
+})
+
+test('pickHits drops weak, duplicate, and empty hits', () => {
+  const seen = new Set()
+  const items = [
+    hit({ score: 0.4 }),
+    { ...SECOND, score: 0.7 },
+    { ...SECOND, score: 0.65 },
+    { title: '', permalink: '', score: 0.9 },
+    { ...SECOND, permalink: 'main/other/note', score: 0.6 },
+  ]
+  assert.equal(MIN_SCORE, 0.5)
   assert.deepEqual(
-    readSearchResults({ isError: false, content: [{ type: 'text', text: JSON.stringify({ results: [hit] }) }] }),
-    [hit],
+    pickHits(items, seen).map(item => item.permalink),
+    ['main/projects/basic-memory/deploy', 'main/other/note'],
   )
-  assert.deepEqual(readSearchResults({ isError: true, content: [] }), [])
+  assert.equal(seen.size, 2)
+  assert.equal(pickHits(items, seen).length, 0)
 })
 
-test('buildVocabulary reads frontmatter, headings, and conclusions', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bm-recall-'))
-  try {
-    writeFileSync(
-      join(dir, 'a.md'),
-      '---\ntitle: DSH 插件生效时机\ntags:\n- computer/dsh\n---\n# 标题\n> 结论：不需要重启服务\n',
-    )
-    writeFileSync(join(dir, 'b.md'), '---\ntitle: Blender MCP 选型\n---\n# 对比\n')
-    const built = buildVocabulary(dir)
-    assert.equal(built.files, 2)
-    assert.ok(built.terms.has('插件'))
-    assert.ok(built.terms.has('生效'))
-    assert.ok(built.terms.has('重启'))
-    assert.equal(built.terms.get('插件').weight, 3)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+test('pickHits keeps the strongest hit when over the item cap', () => {
+  const items = [hit({ score: 0.6 }), hit({ score: 0.9, permalink: 'main/best' }), hit({ score: 0.7, permalink: 'main/mid' })]
+  assert.deepEqual(pickHits(items, new Set()).map(item => item.permalink), ['main/best', 'main/mid'])
 })
 
-test('pre-step injects one recall notice per user message', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bm-recall-apply-'))
-  try {
-    writeFileSync(
-      join(dir, 'a.md'),
-      '---\ntitle: DSH 插件生效时机\n---\n> 结论：不需要重启。\n',
-    )
-
-    const calls = []
-    let handler
-    const ctx = {
-      logger: { info() {}, warn() {} },
-      systemPrompt: { section() {} },
-      inject() {},
-      on(event, fn) {
-        if (event === 'agent/pre-step') handler = fn
-      },
-      tools: {
-        async execute(exec) {
-          calls.push(exec)
-          return {
-            isError: false,
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  results: [
-                    {
-                      title: 'DSH 插件生效时机',
-                      permalink: 'main/a',
-                      score: 1.2,
-                      content: '> 结论：不需要重启。',
-                    },
-                  ],
-                }),
-              },
-            ],
-          }
-        },
-      },
-    }
-
-    apply(ctx, { vaultPath: dir, recall: { minScore: 0.5, ledger: false } })
-    assert.equal(typeof handler, 'function')
-
-    const session = {}
-    const messages = [
-      { id: 'u1', role: 'user', content: [{ type: 'text', text: '插件装了没生效 需要重启吗' }] },
-    ]
-    const decision = { kind: 'enter', messages: [...messages] }
-    const run = () => handler({ agent: { session }, messages, signal: {} }, async () => decision)
-
-    const first = await run()
-    assert.equal(first.messages.length, 2)
-    assert.match(first.messages[1].content[0].text, /^\[BM recall\]/)
-    assert.match(first.messages[1].content[0].text, /main\/a/)
-    assert.equal(calls.length, 1)
-    assert.match(calls[0].arguments.query, /插件|生效/)
-    assert.equal(calls[0].arguments.output_format, 'json')
-
-    const second = await run()
-    assert.equal(second.messages.length, 1)
-    assert.equal(calls.length, 1)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+test('normalizeRecallId makes permalinks, paths, and names collide', () => {
+  assert.equal(normalizeRecallId('main/reference/a'), 'reference/a')
+  assert.equal(normalizeRecallId('reference\\a.md'), 'reference/a')
+  assert.equal(normalizeRecallId('  '), '')
 })
 
-test('recall fails open when bm_search errors', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bm-recall-error-'))
-  try {
-    writeFileSync(join(dir, 'a.md'), '---\ntitle: DSH 插件生效时机\n---\n> 结论：不需要重启。\n')
-
-    let handler
-    const ctx = {
-      logger: { info() {}, warn() {} },
-      systemPrompt: { section() {} },
-      inject() {},
-      on(event, fn) {
-        if (event === 'agent/pre-step') handler = fn
-      },
-      tools: {
-        async execute() {
-          return { isError: true, error: { message: 'UNKNOWN_TOOL' }, content: [] }
-        },
-      },
-    }
-
-    apply(ctx, { vaultPath: dir, recall: { ledger: false } })
-    const messages = [
-      { id: 'u2', role: 'user', content: [{ type: 'text', text: '插件装了没生效 需要重启吗' }] },
-    ]
-    const decision = { kind: 'enter', messages: [...messages] }
-    const result = await handler(
-      { agent: { session: {} }, messages, signal: {} },
-      async () => decision,
-    )
-    assert.equal(result.messages.length, 1)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+test('human-message filters keep agent noise out of recall', () => {
+  assert.equal(isTrivial('嗯'), true)
+  assert.equal(isTrivial('这个怎么配置'), false)
+  assert.equal(isAgentNotice('Background agent dsh-api-scout finished and will do no further work'), true)
+  assert.equal(stripHarnessSuffix('写个总结 Your parent agent id is lead'), '写个总结')
 })
 
-test('pre-step ignores sourced (non-human) messages', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bm-recall-source-'))
-  try {
-    writeFileSync(join(dir, 'a.md'), '---\ntitle: DSH 插件生效时机\n---\n> 结论：不需要重启。\n')
-
-    let handler
-    let calls = 0
-    const ctx = {
-      logger: { info() {}, warn() {} },
-      systemPrompt: { section() {} },
-      inject() {},
-      on(event, fn) {
-        if (event === 'agent/pre-step') handler = fn
-      },
-      tools: {
-        async execute() {
-          calls += 1
-          return { isError: false, content: [] }
-        },
-      },
-    }
-
-    apply(ctx, { vaultPath: dir, recall: { ledger: false } })
-    const messages = [
-      {
-        id: 'u4',
-        role: 'user',
-        source: { kind: 'agent-message' },
-        content: [{ type: 'text', text: '插件装了没生效 需要重启吗' }],
-      },
-    ]
-    const decision = { kind: 'enter', messages: [...messages] }
-    const result = await handler(
-      { agent: { session: {} }, messages, signal: {} },
-      async () => decision,
-    )
-    assert.equal(result.messages.length, 1)
-    assert.equal(calls, 0)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('pre-step recalls human messages that carry a user source', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bm-recall-human-'))
-  try {
-    writeFileSync(join(dir, 'a.md'), '---\ntitle: DSH 插件生效时机\n---\n> 结论：不需要重启。\n')
-
-    let handler
-    let calls = 0
-    const ctx = {
-      logger: { info() {}, warn() {} },
-      systemPrompt: { section() {} },
-      inject() {},
-      on(event, fn) {
-        if (event === 'agent/pre-step') handler = fn
-      },
-      tools: {
-        async execute() {
-          calls += 1
-          return {
-            isError: false,
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  results: [
-                    {
-                      title: 'DSH 插件生效时机',
-                      permalink: 'main/a',
-                      score: 1.2,
-                      content: '> 结论：不需要重启。',
-                    },
-                  ],
-                }),
-              },
-            ],
-          }
-        },
-      },
-    }
-
-    apply(ctx, { vaultPath: dir, recall: { ledger: false } })
-    const messages = [
-      {
-        id: 'u5',
-        role: 'user',
-        source: { kind: 'user' },
-        content: [{ type: 'text', text: '插件装了没生效 需要重启吗' }],
-      },
-    ]
-    const decision = { kind: 'enter', messages: [...messages] }
-    const result = await handler(
-      { agent: { session: {} }, messages, signal: {} },
-      async () => decision,
-    )
-    assert.equal(result.messages.length, 2)
-    assert.match(result.messages[1].content[0].text, /^\[BM recall\]/)
-    assert.equal(calls, 1)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+test('readSearchResults accepts every MCP result shape', () => {
+  assert.deepEqual(readSearchResults({ value: [{ title: 'a' }] }), [{ title: 'a' }])
+  assert.deepEqual(readSearchResults({ value: { results: [{ title: 'b' }] } }), [{ title: 'b' }])
+  assert.deepEqual(readSearchResults({ content: [{ type: 'text', text: '{"results":[{"title":"c"}]}' }] }), [{ title: 'c' }])
+  assert.deepEqual(readSearchResults({ isError: true }), [])
 })

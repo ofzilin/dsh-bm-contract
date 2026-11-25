@@ -1,181 +1,68 @@
 # dsh-bm-contract
 
-Injects the Basic Memory knowledge-base contract into DSH sessions.
+把 Basic Memory 知识库的相关笔记召回进 DSH 会话，并附带一个手动触发的写作规范 skill。
 
-## What it does
+## 它做什么
 
-- **Router (always on)** — registers a `systemPrompt.section` with the compact
-  router from `CONTRACT.md`.
-- **Contract (on trigger)** — on `agent/pre-step`, when the user message matches
-  a trigger (知识库 / 记到 / 笔记 / basic-memory / reference/ / inbox/ …), injects
-  the full `KB-CONTRACT` block as a user message. One injection per user message.
-- **Recall (on every new message)** — builds a few search terms from the vault
-  vocabulary, calls `bm_search` through `ctx.tools.execute`, and injects up to
-  two matching notes (title, permalink, conclusion) as a user message. Skips
-  quietly when nothing matches or the tool is unavailable. One attempt per user
-  message; the same note is never injected twice in a session.
+- **召回（每条真人消息一次）**：用消息原文调 `bm_search`（hybrid），取相似度 ≥ 0.5
+  的前 2 条，渲染成一个 markdown 块，通过 `systemPrompt.context` 注入。同一条笔记在一个
+  会话里只出现一次；没有命中就整块消失；工具失败时静默跳过，连续 3 次失败后本会话熔断。
+- **档位**：第 1 条且相似度 ≥ 0.8 标 `必读`（模型应先 `bm_read` 读全文再回答）；其余标
+  `参考`（摘要够用就别读）。
+- **写作规范**：内置 `skills/dsh-bm-contract-notes/SKILL.md`，在 `apply()` 里注册成
+  runtime skill，`modelInvocable: false`。模型在目录里看不到它，只有你在聊天里输入
+  `/dsh-bm-contract-notes` 才会加载。
 
-Recall and the contract are independent: the contract teaches how to *write*
-notes, recall surfaces what is already *written*.
+注入块长这样（N 条，按相似度排序）：
 
-## Files
+```markdown
+## 知识库相关笔记（2 条，按相似度排序）
 
-- `defaults/CONTRACT.md` — machine contract (`KB-ROUTER` + `KB-CONTRACT` markers).
-- `defaults/SPEC.md` — full human specification.
+1. **Gmail MCP 凭据配置** — `main/reference/computer/gmail-mcp-config` [0.86 必读]
+   OAuth 客户端须建 Desktop 类型，redirect URI 固定为 http://localhost:8765/oauth/callback。
+2. **Basic Memory 部署** — `main/projects/basic-memory/deploy` [0.66 参考]
+   systemd unit 用 uv run 启动，端口 8765。
 
-On first load the plugin copies both defaults to:
-
-```text
-$DSH_HOME/dsh-bm-contract/CONTRACT.md
-$DSH_HOME/dsh-bm-contract/SPEC.md
+必读 = 先用 bm_read 读全文再回答；参考 = 摘要够用就别读；不要复述本块。
 ```
 
-(`$DSH_HOME` defaults to `~/.dsh`; the user directory is created by the plugin,
-not by hand.)
+## 安装
 
-The user files are the source of truth. Edit them directly, or override the
-contract path with `contractPath`. The plugin reads `CONTRACT.md` on each prompt
-assembly and refreshes on mtime change, so edits apply without restarting DSH.
-
-## Defaults and privacy
-
-- `defaults/` contains generic templates intended for publication.
-- `defaults.local/` is optional and gitignored. When present, the plugin uses it
-  for first-run copies and Reset; put personal rules there, not in `defaults/`.
-- Runtime files in `$DSH_HOME/dsh-bm-contract/` are personal. Never commit them.
-- A published package ships only `defaults/`; `defaults.local/` is excluded by
-  `package.json#files` and `.gitignore`.
-
-## Configuration
-
-```yaml
-- id: bm-contract
-  name: dsh-bm-contract
-  config:
-    vaultPath: 'C:\Users\you\Documents\basic-memory'
-    # contractPath: 'C:\Users\you\.dsh\dsh-bm-contract\CONTRACT.md'
-    # maxChars: 4000
-    # triggers: ["知识库", "记到", "笔记"]
-    # recall:
-    #   enabled: true
-    #   project: main
-    #   toolName: mcp__basic-memory__bm_search
-    #   maxTerms: 3
-    #   minScore: 0.5
-    #   minSimilarity: 0.2
-    #   topK: 5
-    #   maxItems: 2
-    #   vocabTtlMs: 300000
-    #   ledger: true
-```
-
-- `vaultPath` — required in your profile patch; without it the header tells the model to configure it.
-- `contractPath` — optional; relative paths resolve against the package root.
-- `maxChars` — cap for one injected block (default 4000).
-- `triggers` — case-insensitive substrings for the conditional injection.
-- `routerStart` / `routerEnd` / `contractStart` / `contractEnd` — optional marker overrides.
-  The defaults are the `<!-- KB-ROUTER:START/END -->` and `<!-- KB-CONTRACT:START/END -->`
-  comments written by `defaults/CONTRACT.md`; you only need these if you invent your own markers.
-
-### Recall options
-
-- `enabled` — default `true`; set `false` to keep the contract behavior only.
-- `project` — Basic Memory project name (default `main`).
-- `toolName` — registered tool name (default `mcp__basic-memory__bm_search`).
-- `mode` — `bm_search` mode (default `hybrid`).
-- `maxTerms` — search terms per message (default 3).
-- `minScore` — keep hits at or above this score (default 0.5); tune from the ledger.
-- `minSimilarity` — passed to `bm_search` (default 0.2).
-- `topK` — `page_size` requested from `bm_search` (default 5).
-- `maxItems` — notes injected per message (default 2).
-- `vocabTtlMs` — vocabulary refresh interval (default 5 minutes).
-- `readToolName` — tool observed for read conversion (default `mcp__basic-memory__bm_read`).
-- `trackReads` — append a `kind: "read"` ledger line when an injected note is read (default `true`).
-- `ledger` — append one JSON line per recall and per read to
-  `$DSH_HOME/dsh-bm-contract/recall-ledger.jsonl` (`kind`, terms, scores, permalinks;
-  no message text). Default `true`.
-
-Recall builds its term vocabulary from note titles, tags, headings, and quoted
-conclusions, then refreshes it at most once per `vocabTtlMs`. A hit is injected
-only when its score is at least `minScore`; otherwise the turn continues with no
-extra context. When `bm_search` is unavailable, recall fails open and the turn
-is unaffected.
-
-The injected block asks for a default read: open the most relevant body first
-(`bm_read` supports section and token budgets), then judge; skip only after
-confirming the note is off-topic. If notes and the live state disagree, the live
-state wins.
-
-The package's `cordis.patch.yml` intentionally has no personal path, so the
-source can be published without leaking a local directory layout.
-
-## Install
-
-Install from GitHub:
-
-```powershell
-dsh plugin --profile web add "github:ofzilin/dsh-bm-contract#v0.3.4"
-```
-
-`#v0.3.4` pins the release; omit it or use `#main` to follow the default branch.
-
-Then add the vault path override to your profile
-(`~/.dsh/profiles/web/cordis.patch.yml`):
-
-```yaml
-- id: bm-contract
-  name: dsh-bm-contract
-  config:
-    vaultPath: 'C:\Users\you\Documents\basic-memory'
-```
-
-Restart DSH; the first load creates the two user files under
-`$DSH_HOME/dsh-bm-contract/`. Open **Plugins → dsh-bm-contract** to edit them.
-
-Local development only (machine-specific path):
-
-```powershell
-dsh plugin --profile web add "link:C:\path\to\dsh-bm-contract"
-```
-
-For npm, publish this package and install it by name; the `defaults/` directory
-is included via `package.json#files`.
-
-## If you remove `cordis.patch.yml`
-
-`dsh.bundle.patch` is what lets `dsh plugin add` activate the bundle. Without it,
-install the package as a dependency and add the row to your profile manually.
-If you delete the file, also remove `dsh.bundle.patch` from `package.json` (or
-keep a minimal placeholder patch); otherwise the loader still looks for the
-missing file.
+在 profile 的 patch 里加一行：
 
 ```yaml
 - insert:
     - id: bm-contract
       name: dsh-bm-contract
       config:
-        vaultPath: 'C:\Users\you\Documents\basic-memory'
+        project: main
 ```
 
-Restart DSH; the first load creates the two user files from `defaults/` (or
-`defaults.local/`). The plugin page and routes are unavailable until the row is
-active.
+前提：会话里有 `mcp__basic-memory__bm_search`（basic-memory MCP server）。没有就不召回。
 
-## Plugins page
+## 配置
 
-Open **Plugins → dsh-bm-contract → Configuration**. The card has two editors:
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `project` | `main` | Basic Memory project |
+| `toolName` | `mcp__basic-memory__bm_search` | MCP 工具名 |
+| `mode` | `hybrid` | 传给 `bm_search` |
+| `minSimilarity` | `0.2` | 传给 `bm_search` |
+| `topK` | `5` | 传给 `bm_search` 的 `page_size` |
 
-- `CONTRACT.md` — injected rules (required markers);
-- `SPEC.md` — full human specification.
+其余全部写死：进块门槛 `0.5`、必读 `0.8`、最多 2 条、整块 ≤ 600 字符。
 
-Save writes both user files; Reset to default copies both from the active
-defaults (`defaults.local/` if present, else `defaults/`).
-The host routes are loopback-only: `GET /bm-contract/state`,
-`POST /bm-contract/save`, `POST /bm-contract/reset`.
+## skill
 
-Refresh the browser after updating the plugin so the client bundle reloads.
+`/dsh-bm-contract-notes`：判断该不该写、放 `projects/` `reference/` `inbox/` 哪个目录、
+文件名怎么起、标签怎么打、关系怎么连、什么时候移动归档。技能正文随包发布，不读写任何
+外部目录，装完即用。
 
-## License
+## 移除
 
-MIT. See [LICENSE](LICENSE).
+删掉 profile 里 `id: bm-contract` 那一行。插件没有任何后台文件：不写 ledger、不复制
+配置模板、不注册 web 路由。
 
+## 隐私
+
+插件只在内存里记录"这个会话展示过哪些笔记"（用于去重），不落盘、不联网。

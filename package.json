@@ -1,7 +1,7 @@
 {
   "name": "dsh-bm-contract",
-  "version": "0.3.4",
-  "description": "Injects the Basic Memory knowledge-base contract into DSH sessions.",
+  "version": "0.4.0",
+  "description": "Recalls Basic Memory knowledge-base notes into DSH context and ships the /dsh-bm-contract-notes writing skill.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -9,7 +9,6 @@
   },
   "exports": {
     ".": "./src/index.js",
-    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "license": "MIT",
@@ -23,8 +22,7 @@
   },
   "files": [
     "src",
-    "lib/client.js",
-    "defaults",
+    "skills",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -32,10 +30,6 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "inject": [],
-      "platform": "web"
     }
   }
 }
