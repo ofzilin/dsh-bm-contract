@@ -18,7 +18,7 @@ export const inject = ['systemPrompt', 'tools']
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SKILL_FILE = resolve(PACKAGE_ROOT, 'skills/dsh-bm-contract-notes/SKILL.md')
 const SKILL_NAME = 'dsh-bm-contract-notes'
-const DEFAULT_TOOL = 'mcp__basic-memory__bm_search'
+const DEFAULT_TOOL = 'mcp__basic-memory__search_notes'
 const MAX_QUERY_CHARS = 400
 const MAX_FAILURES = 3
 
@@ -50,15 +50,16 @@ function readSkill() {
 
 export function apply(ctx, config = {}) {
   const settings = {
-    project: typeof config.project === 'string' && config.project.trim()
-      ? config.project.trim()
-      : 'main',
+    // Empty means "let Basic Memory pick its configured default project".
+    project: typeof config.project === 'string' ? config.project.trim() : '',
     toolName: typeof config.toolName === 'string' && config.toolName.trim()
       ? config.toolName.trim()
       : DEFAULT_TOOL,
-    mode: typeof config.mode === 'string' && config.mode.trim()
-      ? config.mode.trim()
-      : 'hybrid',
+    // Only the vector scale shares one meaning with the 0.5/0.8 thresholds;
+    // hybrid returns fused scores above 1 and text returns negative BM25.
+    searchType: typeof config.searchType === 'string' && config.searchType.trim()
+      ? config.searchType.trim()
+      : 'vector',
     minSimilarity: Number.isFinite(config.minSimilarity) ? config.minSimilarity : 0.2,
     topK: Number.isFinite(config.topK) && config.topK > 0 ? Math.floor(config.topK) : 5,
   }
@@ -72,8 +73,8 @@ export function apply(ctx, config = {}) {
       scope.skills.register({
         name: skill.name,
         description: skill.description,
-        content: skill.content,
         source: 'runtime',
+        content: skill.content,
         invocation: { modelInvocable: false, userInvocable: true },
       })
     })
@@ -108,22 +109,23 @@ export function apply(ctx, config = {}) {
   })
 
   const search = async (agent, signal, query) => {
+    const args = {
+      query,
+      search_type: settings.searchType,
+      min_similarity: settings.minSimilarity,
+      page_size: settings.topK,
+      output_format: 'json',
+    }
+    if (settings.project) args.project = settings.project
     const result = await ctx.tools.execute({
       callId: `bm-recall:${randomUUID()}`,
       name: settings.toolName,
-      arguments: {
-        project: settings.project,
-        query,
-        mode: settings.mode,
-        min_similarity: settings.minSimilarity,
-        page_size: settings.topK,
-        output_format: 'json',
-      },
+      arguments: args,
       agent,
       signal: signal ?? new AbortController().signal,
     })
     if (result?.isError) {
-      const reason = result.error?.message ?? result.error?.code ?? 'bm_search failed'
+      const reason = result.error?.message ?? result.error?.code ?? 'search failed'
       throw new Error(reason)
     }
     return readSearchResults(result)

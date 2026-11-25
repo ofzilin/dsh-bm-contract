@@ -53,7 +53,7 @@ export function hitId(item) {
 
 /**
  * Keep the strongest unseen hits.
- * @param {unknown} items raw bm_search results
+ * @param {unknown} items raw search_notes results
  * @param {Set<string>} seen normalized ids already shown in this session
  */
 export function pickHits(items, seen) {
@@ -80,6 +80,7 @@ function cleanInline(value, max = Number.POSITIVE_INFINITY) {
   const text = String(value ?? '')
     .replace(/[*`\[\]<>#|]/g, ' ')
     .replace(/\s+/g, ' ')
+    .replace(/([：:，,。、])\s+/g, '$1')
     .trim()
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
@@ -94,7 +95,11 @@ function conclusionOf(content, max) {
   const plain = lines.find(line =>
     line.trim() && !/^#/.test(line) && !/^\|/.test(line) && !/^---/.test(line))
   const picked = quotes.find(line => /结论|要点|一句话/.test(line)) ?? quotes[0] ?? plain ?? ''
-  const text = cleanInline(picked, max)
+  // Basic Memory observations look like `- [决策] 内容`; keep only the payload.
+  const observation = /^\s*[-*]\s*\[([^\]]{1,12})\]\s*(.+)$/.exec(picked)
+  const text = observation
+    ? cleanInline(`${observation[1]}：${observation[2]}`, max)
+    : cleanInline(picked, max)
   return text
 }
 
@@ -107,7 +112,7 @@ export function formatRecall(items) {
   const hits = (Array.isArray(items) ? items : []).slice(0, MAX_ITEMS)
   if (hits.length === 0) return ''
 
-  const tail = '必读 = 先用 bm_read 读全文再回答；参考 = 摘要够用就别读；不要复述本块。'
+  const tail = '必读 = 先用 read_note 读全文再回答；参考 = 摘要够用就别读；不要复述本块。'
   const header = count => `## 知识库相关笔记（${count} 条，按相似度排序）`
   const build = blocks => [header(blocks.length), '', blocks.join('\n\n'), '', tail].join('\n')
   const render = (item, index) => {
@@ -141,10 +146,11 @@ export function formatRecall(items) {
 /** Read hits from a ToolExecutionResult without assuming one MCP client shape. */
 export function readSearchResults(result) {
   if (!result || result.isError) return []
-  const values = [result.value, result.value?.data, result.value?.structuredContent]
+  const nested = result.value?.structuredContent?.result ?? result.value?.result
+  const values = [result.value, result.value?.data, result.value?.structuredContent, nested]
   for (const value of values) {
-    if (Array.isArray(value)) return value
-    if (Array.isArray(value?.results)) return value.results
+    const hits = hitsOf(value)
+    if (hits) return hits
   }
   const text = (Array.isArray(result.content) ? result.content : [])
     .filter(block => block?.type === 'text' && typeof block.text === 'string')
@@ -153,10 +159,16 @@ export function readSearchResults(result) {
   if (!text) return []
   try {
     const parsed = JSON.parse(text)
-    if (Array.isArray(parsed)) return parsed
-    if (Array.isArray(parsed?.results)) return parsed.results
+    return hitsOf(parsed) ?? hitsOf(parsed?.result) ?? []
   } catch {
     // Not JSON: an older BM build may return a markdown list.
   }
   return []
+}
+
+/** Basic Memory wraps results as `{ results: [...] }` one or two levels deep. */
+function hitsOf(value) {
+  if (Array.isArray(value)) return value
+  if (Array.isArray(value?.results)) return value.results
+  return null
 }

@@ -5,7 +5,7 @@ import { apply } from '../src/index.js'
 
 const userMessage = (id, text) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
 
-function harness(search) {
+function harness(search, config) {
   const registered = { skills: [], contexts: [], calls: [], hooks: {} }
   const ctx = {
     logger: { info() {}, warn() {} },
@@ -20,7 +20,7 @@ function harness(search) {
     },
     on(event, handler) { registered.hooks[event] = handler },
   }
-  apply(ctx)
+  apply(ctx, config)
   const step = async (agent, messages) =>
     registered.hooks['agent/pre-step']({ agent, messages, signal: undefined }, async () => ({ kind: 'enter' }))
   return { ctx, registered, step }
@@ -51,16 +51,28 @@ test('registers the manual skill and the recall context', () => {
 })
 
 test('a human turn searches and exposes the block to the context', async () => {
-  const { registered, step } = harness(() => ({ value: [hit()] }))
+  const { registered, step } = harness(() => ({ value: { structuredContent: { result: { results: [hit()] } } } }))
   const agent = { id: 'session-1' }
   await step(agent, [userMessage('m1', 'Gmail MCP 凭据怎么配')])
   assert.equal(registered.calls.length, 1)
-  assert.equal(registered.calls[0].name, 'mcp__basic-memory__bm_search')
-  assert.equal(registered.calls[0].arguments.project, 'main')
-  assert.equal(registered.calls[0].arguments.query, 'Gmail MCP 凭据怎么配')
+  assert.equal(registered.calls[0].name, 'mcp__basic-memory__search_notes')
+  assert.deepEqual(registered.calls[0].arguments, {
+    query: 'Gmail MCP 凭据怎么配',
+    search_type: 'vector',
+    min_similarity: 0.2,
+    page_size: 5,
+    output_format: 'json',
+  })
   const text = registered.contexts[0].text({ agent })
   assert.match(text, /^## 知识库相关笔记（1 条，按相似度排序）/)
   assert.match(text, /\[0\.86 必读\]/)
+})
+
+test('an explicit project is forwarded to the search tool', async () => {
+  const { registered, step } = harness(() => ({ value: [] }), { project: 'kb', searchType: 'hybrid' })
+  await step({ id: 's' }, [userMessage('m', '随便问问配置')])
+  assert.equal(registered.calls[0].arguments.project, 'kb')
+  assert.equal(registered.calls[0].arguments.search_type, 'hybrid')
 })
 
 test('a session never shows the same note twice', async () => {

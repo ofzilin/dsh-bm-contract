@@ -40,7 +40,7 @@ test('formatRecall renders the injected block', () => {
       '2. **Basic Memory 部署** — `main/projects/basic-memory/deploy` [0.66 参考]',
       '   systemd unit 用 uv run 启动，端口 8765。',
       '',
-      '必读 = 先用 bm_read 读全文再回答；参考 = 摘要够用就别读；不要复述本块。',
+      '必读 = 先用 read_note 读全文再回答；参考 = 摘要够用就别读；不要复述本块。',
     ].join('\n'),
   )
 })
@@ -124,6 +124,17 @@ test('human-message filters keep agent noise out of recall', () => {
 test('readSearchResults accepts every MCP result shape', () => {
   assert.deepEqual(readSearchResults({ value: [{ title: 'a' }] }), [{ title: 'a' }])
   assert.deepEqual(readSearchResults({ value: { results: [{ title: 'b' }] } }), [{ title: 'b' }])
+  assert.deepEqual(
+    readSearchResults({ value: { structuredContent: { result: { results: [{ title: 'd' }] } } } }),
+    [{ title: 'd' }],
+  )
+  assert.deepEqual(readSearchResults({ content: [{ type: 'text', text: '{"result":{"results":[{"title":"e"}]}}' }] }), [{ title: 'e' }])
   assert.deepEqual(readSearchResults({ content: [{ type: 'text', text: '{"results":[{"title":"c"}]}' }] }), [{ title: 'c' }])
   assert.deepEqual(readSearchResults({ isError: true }), [])
+})
+
+test('an observation line becomes the conclusion', () => {
+  const text = formatRecall([hit({ content: '# 知识库口径\n\n- [决策] 全局知识库放在 ~/.knowledge-base，project 名 kb' })])
+  const line = text.split('\n').find(item => item.startsWith('   '))
+  assert.equal(line, '   决策：全局知识库放在 ~/.knowledge-base，project 名 kb')
 })
